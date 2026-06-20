@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useRef } from 'react';
 import {
   Scan,
   Search,
@@ -18,6 +18,8 @@ import {
   Eye,
   ChevronLeft,
   ChevronRight,
+  Camera,
+  X,
 } from 'lucide-react';
 import Button from '@/components/Button';
 import Card from '@/components/Card';
@@ -79,10 +81,13 @@ export default function PickupVerify() {
     currentIndex: number;
     clothingCode: string;
   }>({ open: false, photos: [], currentIndex: 0, clothingCode: '' });
+  const [pickupPhotos, setPickupPhotos] = useState<Record<string, string[]>>({});
+  const pickupFileInputRefs = useRef<Record<string, HTMLInputElement | null>>({});
 
   const getClothingItemByCode = useOrderStore((s) => s.getClothingItemByCode);
   const searchByPhone = useOrderStore((s) => s.searchByPhone);
   const pickUpOrder = useOrderStore((s) => s.pickUpOrder);
+  const updateClothingItemPhotos = useOrderStore((s) => s.updateClothingItemPhotos);
   const getMemberByPhone = useMemberStore((s) => s.getMemberByPhone);
 
   const [foundOrders, setFoundOrders] = useState<Order[]>([]);
@@ -177,6 +182,17 @@ export default function PickupVerify() {
 
   const handleConfirmPickup = () => {
     if (selectedItemList.length === 0) return;
+    if (!allSelectedHavePickupPhotos()) {
+      setErrorMsg('请为所有选中的衣物拍摄取件现状照片');
+      return;
+    }
+
+    for (const item of selectedItemList) {
+      const photos = getItemPickupPhotos(item.id);
+      if (photos.length > 0) {
+        updateClothingItemPhotos(item.orderId, item.id, { pickupPhotos: photos });
+      }
+    }
 
     const ordersMap = new Map<string, string[]>();
     for (const item of selectedItemList) {
@@ -201,6 +217,8 @@ export default function PickupVerify() {
     setShowSuccessModal(true);
     setFoundOrders([]);
     setSelectedItems(new Set());
+    setPickupPhotos({});
+    setErrorMsg('');
   };
 
   const handleCloseSuccessModal = () => {
@@ -240,6 +258,35 @@ export default function PickupVerify() {
 
   const getOverdueDays = (item: ClothingItem) => {
     return checkOverdue(item.receivedAt, OVERDUE_THRESHOLD_DAYS).overdueDays;
+  };
+
+  const handlePickupFileUpload = (itemId: string, files: FileList | null) => {
+    if (!files || files.length === 0) return;
+    const file = files[0];
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const result = e.target?.result as string;
+      setPickupPhotos((prev) => ({
+        ...prev,
+        [itemId]: [...(prev[itemId] || []), result],
+      }));
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const handleRemovePickupPhoto = (itemId: string, photoIndex: number) => {
+    setPickupPhotos((prev) => ({
+      ...prev,
+      [itemId]: (prev[itemId] || []).filter((_, i) => i !== photoIndex),
+    }));
+  };
+
+  const getItemPickupPhotos = (itemId: string) => {
+    return pickupPhotos[itemId] || [];
+  };
+
+  const allSelectedHavePickupPhotos = () => {
+    return selectedItemList.every((item) => getItemPickupPhotos(item.id).length > 0);
   };
 
   return (
@@ -602,6 +649,67 @@ export default function PickupVerify() {
                               </div>
                             )}
 
+                            <div className="border-t border-dashed border-surface-200 pt-3">
+                              <div className="flex items-center gap-2 mb-2">
+                                <div className="flex h-7 w-7 items-center justify-center rounded-full bg-blue-100">
+                                  <Camera className="h-4 w-4 text-blue-600" />
+                                </div>
+                                <div>
+                                  <p className="text-sm font-semibold text-gray-800">
+                                    取件现状拍照
+                                    <span className="text-red-500 ml-1">*</span>
+                                  </p>
+                                  <p className="text-xs text-gray-500">（取件时拍摄衣物现状，必填）</p>
+                                </div>
+                              </div>
+
+                              <div className="flex flex-wrap gap-2">
+                                {getItemPickupPhotos(item.id).map((photo, photoIndex) => (
+                                  <div key={photoIndex} className="relative h-20 w-20 rounded-lg overflow-hidden border border-surface-200">
+                                    <img src={photo} alt="取件现状" className="h-full w-full object-cover" />
+                                    <button
+                                      onClick={() => handleRemovePickupPhoto(item.id, photoIndex)}
+                                      className="absolute top-0 right-0 flex h-5 w-5 items-center justify-center rounded-bl-lg bg-black/50 text-white hover:bg-black/70"
+                                    >
+                                      <X className="h-3 w-3" />
+                                    </button>
+                                  </div>
+                                ))}
+                                {getItemPickupPhotos(item.id).length < 9 && (
+                                  <>
+                                    <input
+                                      ref={(el) => {
+                                        pickupFileInputRefs.current[item.id] = el;
+                                      }}
+                                      type="file"
+                                      accept="image/*"
+                                      capture="environment"
+                                      className="hidden"
+                                      onChange={(e) => handlePickupFileUpload(item.id, e.target.files)}
+                                    />
+                                    <button
+                                      onClick={() => pickupFileInputRefs.current[item.id]?.click()}
+                                      className={cn(
+                                        'flex h-20 w-20 flex-col items-center justify-center rounded-lg border-2 border-dashed transition-colors',
+                                        getItemPickupPhotos(item.id).length === 0
+                                          ? 'border-red-300 text-red-400 hover:border-red-400 hover:text-red-500 bg-red-50/30'
+                                          : 'border-surface-300 text-gray-400 hover:border-primary-400 hover:text-primary-500'
+                                      )}
+                                    >
+                                      <Camera className="h-6 w-6 mb-1" />
+                                      <span className="text-xs">添加</span>
+                                    </button>
+                                  </>
+                                )}
+                              </div>
+                              {getItemPickupPhotos(item.id).length === 0 && (
+                                <p className="mt-1.5 text-xs text-red-500 flex items-center gap-1">
+                                  <AlertTriangle className="h-3 w-3" />
+                                  请至少拍摄1张取件现状照片
+                                </p>
+                              )}
+                            </div>
+
                             <div className="rounded-lg bg-primary-50 border border-primary-100 p-3">
                               <p className="text-xs font-medium text-primary-700 mb-1">取件核对提示</p>
                               <p className="text-xs text-primary-600">
@@ -645,11 +753,26 @@ export default function PickupVerify() {
                         ¥{(totalAmount + overdueFee).toFixed(2)}
                       </span>
                     </div>
+                    {selectedItems.size > 0 && (
+                      <>
+                        <div className="h-6 w-px bg-surface-200" />
+                        <div>
+                          <span className="text-sm text-gray-500">取件照片：</span>
+                          <span className={cn(
+                            'text-xl font-bold ml-1',
+                            allSelectedHavePickupPhotos() ? 'text-green-600' : 'text-red-500'
+                          )}>
+                            {selectedItemList.filter((item) => getItemPickupPhotos(item.id).length > 0).length}/{selectedItems.size}
+                          </span>
+                          <span className="text-sm text-gray-500 ml-1">已上传</span>
+                        </div>
+                      </>
+                    )}
                   </div>
                   <Button
                     size="lg"
                     onClick={handleConfirmPickup}
-                    disabled={selectedItems.size === 0}
+                    disabled={selectedItems.size === 0 || !allSelectedHavePickupPhotos()}
                     leftIcon={<CheckSquare className="h-5 w-5" />}
                   >
                     确认取件核销

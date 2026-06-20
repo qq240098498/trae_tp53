@@ -20,6 +20,7 @@ export interface ClothingItem {
   brand: string;
   description: string;
   flawPhotos: string[];
+  pickupPhotos: string[];
   washMethod: WashMethod;
   specialTreatments: SpecialTreatment[];
   basePrice: number;

@@ -16,6 +16,7 @@ import {
   Crown,
   Coins,
   Wallet,
+  AlertTriangle,
 } from 'lucide-react';
 import Button from '@/components/Button';
 import Card from '@/components/Card';
@@ -44,6 +45,7 @@ interface ClothingFormItem {
   brand: string;
   description: string;
   flawPhotos: string[];
+  pickupPhotos: string[];
   washMethod: WashMethod;
   specialTreatments: string[];
 }
@@ -64,7 +66,9 @@ const WASH_METHOD_OPTIONS: { value: WashMethod; label: string }[] = [
   { value: 'hand_wash', label: '手洗' },
 ];
 
-const MEMBER_LEVEL_LABELS: Record<MemberLevel, { label: string; color: string }> = {
+type TagVariant = 'default' | 'primary' | 'success' | 'warning' | 'danger' | 'info' | 'purple';
+
+const MEMBER_LEVEL_LABELS: Record<MemberLevel, { label: string; color: TagVariant }> = {
   normal: { label: '普通会员', color: 'default' },
   silver: { label: '银卡会员', color: 'info' },
   gold: { label: '金卡会员', color: 'warning' },
@@ -87,6 +91,7 @@ function createEmptyClothingItem(): ClothingFormItem {
     brand: '',
     description: '',
     flawPhotos: [],
+    pickupPhotos: [],
     washMethod: 'standard',
     specialTreatments: [],
   };
@@ -227,7 +232,7 @@ export default function ClothesReceive() {
 
   const canProceedToStep3 = () => {
     return clothes.every(
-      (c) => c.category && c.color.trim() !== ''
+      (c) => c.category && c.color.trim() !== '' && c.flawPhotos.length > 0
     );
   };
 
@@ -260,6 +265,7 @@ export default function ClothesReceive() {
         brand: item.brand,
         description: item.description,
         flawPhotos: item.flawPhotos,
+        pickupPhotos: item.pickupPhotos,
         washMethod: item.washMethod,
         specialTreatments: item.specialTreatments.map((feeId) => {
           const fee = extraFees.find((f) => f.id === feeId);
@@ -393,7 +399,7 @@ export default function ClothesReceive() {
             <div className="flex-1">
               <div className="flex items-center gap-2 mb-2">
                 <span className="text-lg font-semibold text-gray-800">{member.name}</span>
-                <Tag variant={MEMBER_LEVEL_LABELS[member.level].color as any}>
+                <Tag variant={MEMBER_LEVEL_LABELS[member.level].color}>
                   {MEMBER_LEVEL_LABELS[member.level].label}
                 </Tag>
               </div>
@@ -526,7 +532,11 @@ export default function ClothesReceive() {
           </div>
 
           <div>
-            <label className="block text-sm text-gray-600 mb-1.5">瑕疵拍照</label>
+            <label className="block text-sm text-gray-600 mb-1.5">
+              瑕疵拍照
+              <span className="text-red-500 ml-1">*</span>
+              <span className="text-xs text-gray-400 font-normal ml-2">（收件时拍摄衣物原有瑕疵，必填）</span>
+            </label>
             <div className="flex flex-wrap gap-2">
               {item.flawPhotos.map((photo, photoIndex) => (
                 <div key={photoIndex} className="relative h-20 w-20 rounded-lg overflow-hidden border border-surface-200">
@@ -547,12 +557,18 @@ export default function ClothesReceive() {
                     }}
                     type="file"
                     accept="image/*"
+                    capture="environment"
                     className="hidden"
                     onChange={(e) => handleFileUpload(item.tempId, e.target.files)}
                   />
                   <button
                     onClick={() => fileInputRefs.current[item.tempId]?.click()}
-                    className="flex h-20 w-20 flex-col items-center justify-center rounded-lg border-2 border-dashed border-surface-300 text-gray-400 hover:border-primary-400 hover:text-primary-500 transition-colors"
+                    className={cn(
+                      'flex h-20 w-20 flex-col items-center justify-center rounded-lg border-2 border-dashed transition-colors',
+                      item.flawPhotos.length === 0
+                        ? 'border-red-300 text-red-400 hover:border-red-400 hover:text-red-500 bg-red-50/30'
+                        : 'border-surface-300 text-gray-400 hover:border-primary-400 hover:text-primary-500'
+                    )}
                   >
                     <Camera className="h-6 w-6 mb-1" />
                     <span className="text-xs">添加</span>
@@ -560,6 +576,12 @@ export default function ClothesReceive() {
                 </>
               )}
             </div>
+            {item.flawPhotos.length === 0 && (
+              <p className="mt-1.5 text-xs text-red-500 flex items-center gap-1">
+                <AlertTriangle className="h-3 w-3" />
+                请至少拍摄1张瑕疵照片
+              </p>
+            )}
           </div>
         </Card>
       ))}

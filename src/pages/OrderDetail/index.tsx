@@ -356,6 +356,34 @@ export default function OrderDetail() {
                           </div>
                         </div>
                       )}
+                      {item.pickupPhotos.length > 0 && (
+                        <div className="mt-2">
+                          <span className="text-xs text-gray-500">取件照片：</span>
+                          <div className="mt-1 flex flex-wrap gap-2">
+                            {item.pickupPhotos.map((photo, idx) => (
+                              <div
+                                key={idx}
+                                className="relative h-16 w-16 rounded-md overflow-hidden border border-blue-200 bg-blue-50"
+                              >
+                                <img
+                                  src={photo}
+                                  alt={`取件照片${idx + 1}`}
+                                  className="h-full w-full object-cover"
+                                />
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                      {item.pickupPhotos.length === 0 && item.status === 'picked_up' && (
+                        <div className="mt-2">
+                          <span className="text-xs text-gray-500">取件照片：</span>
+                          <div className="mt-1 flex items-center gap-1 text-xs text-gray-400">
+                            <ImageIcon className="h-3 w-3" />
+                            <span>无</span>
+                          </div>
+                        </div>
+                      )}
                     </div>
                     <div className="text-right flex-shrink-0">
                       <p className="text-xs text-gray-500">价格</p>

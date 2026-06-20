@@ -43,6 +43,7 @@ interface OrderStoreState {
   addOrder: (input: CreateOrderInput) => Order;
   updateOrderStatus: (input: UpdateOrderStatusInput) => boolean;
   updateClothingItemStatus: (orderId: string, clothingId: string, status: OrderStatus) => boolean;
+  updateClothingItemPhotos: (orderId: string, clothingId: string, photos: { flawPhotos?: string[]; pickupPhotos?: string[] }) => boolean;
   pickUpOrder: (input: PickUpOrderInput) => boolean;
   checkOverdueOrders: () => { updated: number; overdueOrders: Order[] };
   getOverdueOrders: () => Order[];
@@ -211,6 +212,42 @@ export const useOrderStore = create<OrderStoreState>((set, get) => {
             ...o,
             clothes: updatedClothes,
             status: newOrderStatus,
+            updatedAt: now,
+          };
+        });
+        const newState = { ...state, orders: newOrders };
+        persist(newState);
+        return newState;
+      });
+
+      return true;
+    },
+
+    updateClothingItemPhotos: (orderId, clothingId, photos) => {
+      const order = get().getOrderById(orderId);
+      if (!order) return false;
+
+      const item = order.clothes.find((c) => c.id === clothingId);
+      if (!item) return false;
+
+      const now = new Date().toISOString();
+
+      set((state) => {
+        const newOrders = state.orders.map((o) => {
+          if (o.id !== orderId) return o;
+
+          const updatedClothes = o.clothes.map((c) => {
+            if (c.id !== clothingId) return c;
+            return {
+              ...c,
+              flawPhotos: photos.flawPhotos !== undefined ? photos.flawPhotos : c.flawPhotos,
+              pickupPhotos: photos.pickupPhotos !== undefined ? photos.pickupPhotos : c.pickupPhotos,
+            };
+          });
+
+          return {
+            ...o,
+            clothes: updatedClothes,
             updatedAt: now,
           };
         });
