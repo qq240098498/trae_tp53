@@ -1,4 +1,5 @@
 import { useState, useRef } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { QRCodeSVG } from 'qrcode.react';
 import {
   User,
@@ -92,6 +93,7 @@ function createEmptyClothingItem(): ClothingFormItem {
 }
 
 export default function ClothesReceive() {
+  const navigate = useNavigate();
   const [currentStep, setCurrentStep] = useState<Step>(1);
   const [phoneInput, setPhoneInput] = useState('');
   const [searched, setSearched] = useState(false);
@@ -102,6 +104,8 @@ export default function ClothesReceive() {
   const [paymentMethod, setPaymentMethod] = useState('cash');
   const [showSuccessModal, setShowSuccessModal] = useState(false);
   const [createdOrderNo, setCreatedOrderNo] = useState('');
+  const [createdOrderId, setCreatedOrderId] = useState('');
+  const [submitting, setSubmitting] = useState(false);
   const fileInputRefs = useRef<Record<string, HTMLInputElement | null>>({});
 
   const getMemberByPhone = useMemberStore((s) => s.getMemberByPhone);
@@ -228,54 +232,70 @@ export default function ClothesReceive() {
   };
 
   const handleSubmit = () => {
+    if (submitting) return;
+
     const customerName = member?.name || registerName;
     const customerPhone = member?.phone || registerPhone;
+
+    if (!customerName?.trim() || !customerPhone?.trim()) {
+      return;
+    }
 
     if (paymentMethod === 'balance' && member) {
       if (member.balance < totalAmount) {
         return;
       }
-      deduct({ memberId: member.id, amount: totalAmount });
     }
 
-    const orderClothes = itemPrices.map((item) => ({
-      category: item.category,
-      color: item.color,
-      brand: item.brand,
-      description: item.description,
-      flawPhotos: item.flawPhotos,
-      washMethod: item.washMethod,
-      specialTreatments: item.specialTreatments.map((feeId) => {
-        const fee = extraFees.find((f) => f.id === feeId);
-        return {
-          id: feeId,
-          name: fee?.name || '',
-          price: fee?.price || 0,
-        } as SpecialTreatment;
-      }),
-      basePrice: item.basePrice,
-      extraPrice: item.extraPrice,
-      totalPrice: item.totalPrice,
-    }));
+    setSubmitting(true);
 
-    const order = addOrder({
-      customerName,
-      customerPhone,
-      memberId: member?.id,
-      clothes: orderClothes,
-      subtotal,
-      discount: discountAmount,
-      totalAmount,
-      paidAmount: totalAmount,
-      paymentMethod,
-    });
+    try {
+      if (paymentMethod === 'balance' && member) {
+        deduct({ memberId: member.id, amount: totalAmount });
+      }
 
-    if (member) {
-      addPoints(member.id, Math.floor(totalAmount));
+      const orderClothes = itemPrices.map((item) => ({
+        category: item.category,
+        color: item.color,
+        brand: item.brand,
+        description: item.description,
+        flawPhotos: item.flawPhotos,
+        washMethod: item.washMethod,
+        specialTreatments: item.specialTreatments.map((feeId) => {
+          const fee = extraFees.find((f) => f.id === feeId);
+          return {
+            id: feeId,
+            name: fee?.name || '',
+            price: fee?.price || 0,
+          } as SpecialTreatment;
+        }),
+        basePrice: item.basePrice,
+        extraPrice: item.extraPrice,
+        totalPrice: item.totalPrice,
+      }));
+
+      const order = addOrder({
+        customerName,
+        customerPhone,
+        memberId: member?.id,
+        clothes: orderClothes,
+        subtotal,
+        discount: discountAmount,
+        totalAmount,
+        paidAmount: totalAmount,
+        paymentMethod,
+      });
+
+      if (member) {
+        addPoints(member.id, Math.floor(totalAmount));
+      }
+
+      setCreatedOrderNo(order.orderNo);
+      setCreatedOrderId(order.id);
+      setShowSuccessModal(true);
+    } finally {
+      setSubmitting(false);
     }
-
-    setCreatedOrderNo(order.orderNo);
-    setShowSuccessModal(true);
   };
 
   const handleNext = () => {
@@ -784,9 +804,13 @@ export default function ClothesReceive() {
         ) : (
           <Button
             onClick={handleSubmit}
-            disabled={paymentMethod === 'balance' && (!member || member.balance < totalAmount)}
+            loading={submitting}
+            disabled={
+              submitting ||
+              (paymentMethod === 'balance' && (!member || member.balance < totalAmount))
+            }
           >
-            提交订单
+            {submitting ? '提交中...' : '提交订单'}
           </Button>
         )}
       </div>
@@ -796,9 +820,33 @@ export default function ClothesReceive() {
         title="订单创建成功"
         onClose={() => setShowSuccessModal(false)}
         footer={
-          <Button onClick={() => setShowSuccessModal(false)}>
-            确定
-          </Button>
+          <div className="flex gap-3 justify-end">
+            <Button
+              variant="secondary"
+              onClick={() => {
+                setShowSuccessModal(false);
+                setCurrentStep(1);
+                setPhoneInput('');
+                setSearched(false);
+                setMember(null);
+                setRegisterName('');
+                setRegisterPhone('');
+                setClothes([createEmptyClothingItem()]);
+                setPaymentMethod('cash');
+              }}
+            >
+              继续登记
+            </Button>
+            <Button
+              onClick={() => {
+                if (createdOrderId) {
+                  navigate(`/orders/${createdOrderId}`);
+                }
+              }}
+            >
+              查看订单
+            </Button>
+          </div>
         }
       >
         <div className="text-center py-4">
