@@ -92,16 +92,21 @@ export default function BatchDetail() {
   const handleAddOrders = () => {
     if (!batch || selectedOrderIdsToAdd.length === 0) return;
 
-    addOrdersToBatch(batch.id, selectedOrderIdsToAdd);
-    selectedOrderIdsToAdd.forEach((orderId) => {
-      assignOrderToBatch({
-        orderId,
-        batchId: batch.id,
-        batchNo: batch.batchNo,
-        pickupPointId: batch.pickupPointId,
-        pickupPointName: batch.pickupPointName,
+    const result = addOrdersToBatch(batch.id, selectedOrderIdsToAdd);
+    if (result.success) {
+      const addedOrderIds = selectedOrderIdsToAdd.filter(
+        (id) => !result.skippedOrderIds.includes(id)
+      );
+      addedOrderIds.forEach((orderId) => {
+        assignOrderToBatch({
+          orderId,
+          batchId: batch.id,
+          batchNo: batch.batchNo,
+          pickupPointId: batch.pickupPointId,
+          pickupPointName: batch.pickupPointName,
+        });
       });
-    });
+    }
 
     setSelectedOrderIdsToAdd([]);
     setShowAddOrdersModal(false);

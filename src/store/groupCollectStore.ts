@@ -53,9 +53,11 @@ interface GroupCollectStoreState {
   getBatchesByPickupPoint: (pickupPointId: string) => CollectionBatch[];
   getBatchesByStatus: (status: BatchStatus) => CollectionBatch[];
   searchBatches: (keyword: string) => CollectionBatch[];
-  addBatch: (input: CreateBatchInput) => CollectionBatch;
+  getBatchByOrderId: (orderId: string) => CollectionBatch | undefined;
+  isOrderInAnyBatch: (orderId: string) => boolean;
+  addBatch: (input: CreateBatchInput) => CollectionBatch | null;
   updateBatchStatus: (input: UpdateBatchStatusInput) => boolean;
-  addOrdersToBatch: (batchId: string, orderIds: string[]) => boolean;
+  addOrdersToBatch: (batchId: string, orderIds: string[]) => { success: boolean; addedCount: number; skippedOrderIds: string[] };
   removeOrdersFromBatch: (batchId: string, orderIds: string[]) => boolean;
   deleteBatch: (id: string) => boolean;
 }
@@ -229,7 +231,26 @@ export const useGroupCollectStore = create<GroupCollectStoreState>((set, get) =>
       );
     },
 
+    getBatchByOrderId: (orderId) => {
+      return get().batches.find((b) => b.orderIds.includes(orderId));
+    },
+
+    isOrderInAnyBatch: (orderId) => {
+      return get().batches.some((b) => b.orderIds.includes(orderId));
+    },
+
     addBatch: (input) => {
+      const { orderIds } = input;
+      const duplicateOrderIds: string[] = [];
+      for (const orderId of orderIds) {
+        if (get().isOrderInAnyBatch(orderId)) {
+          duplicateOrderIds.push(orderId);
+        }
+      }
+      if (duplicateOrderIds.length > 0) {
+        return null;
+      }
+
       const now = new Date().toISOString();
       const newBatch: CollectionBatch = {
         id: `bt${Date.now()}`,
@@ -285,12 +306,33 @@ export const useGroupCollectStore = create<GroupCollectStoreState>((set, get) =>
 
     addOrdersToBatch: (batchId, orderIds) => {
       const batch = get().getBatchById(batchId);
-      if (!batch) return false;
-      if (batch.status !== 'pending' && batch.status !== 'collecting') return false;
+      if (!batch) return { success: false, addedCount: 0, skippedOrderIds: orderIds };
+      if (batch.status !== 'pending' && batch.status !== 'collecting') {
+        return { success: false, addedCount: 0, skippedOrderIds: orderIds };
+      }
 
       const now = new Date().toISOString();
-      const existingIds = new Set(batch.orderIds);
-      const newOrderIds = [...batch.orderIds, ...orderIds.filter((id) => !existingIds.has(id))];
+      const existingInBatch = new Set(batch.orderIds);
+      const orderIdsToAdd: string[] = [];
+      const skippedOrderIds: string[] = [];
+
+      for (const orderId of orderIds) {
+        if (existingInBatch.has(orderId)) {
+          skippedOrderIds.push(orderId);
+          continue;
+        }
+        if (get().isOrderInAnyBatch(orderId)) {
+          skippedOrderIds.push(orderId);
+          continue;
+        }
+        orderIdsToAdd.push(orderId);
+      }
+
+      if (orderIdsToAdd.length === 0) {
+        return { success: false, addedCount: 0, skippedOrderIds };
+      }
+
+      const newOrderIds = [...batch.orderIds, ...orderIdsToAdd];
 
       set((state) => {
         const newBatches = state.batches.map((b) =>
@@ -308,7 +350,7 @@ export const useGroupCollectStore = create<GroupCollectStoreState>((set, get) =>
         return newState;
       });
 
-      return true;
+      return { success: true, addedCount: orderIdsToAdd.length, skippedOrderIds };
     },
 
     removeOrdersFromBatch: (batchId, orderIds) => {

@@ -124,15 +124,22 @@ export default function BatchManagement() {
     const point = activePoints.find((p) => p.id === selectedPickupPoint);
     if (!point) return;
 
+    const availableOrderIds = selectedOrderIds.filter((id) => {
+      const order = unassignedOrders.find((o) => o.id === id);
+      return order !== undefined;
+    });
+
     const batch = addBatch({
       pickupPointId: point.id,
       pickupPointName: point.name,
       scheduledDate,
       scheduledTime: point.collectionTime,
-      orderIds: selectedOrderIds,
+      orderIds: availableOrderIds,
     });
 
-    selectedOrderIds.forEach((orderId) => {
+    if (!batch) return;
+
+    availableOrderIds.forEach((orderId) => {
       assignOrderToBatch({
         orderId,
         batchId: batch.id,
