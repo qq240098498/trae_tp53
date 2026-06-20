@@ -7,13 +7,17 @@ import {
   Package,
   Check,
   User,
-  Crown,
   Clock,
   Shirt,
   Tag as TagIcon,
   AlertTriangle,
   Sparkles,
-  X,
+  ImageIcon,
+  ChevronDown,
+  ChevronUp,
+  Eye,
+  ChevronLeft,
+  ChevronRight,
 } from 'lucide-react';
 import Button from '@/components/Button';
 import Card from '@/components/Card';
@@ -33,7 +37,9 @@ interface ClothingItemWithOrder extends ClothingItem {
   orderNo: string;
 }
 
-const MEMBER_LEVEL_LABELS: Record<MemberLevel, { label: string; color: string }> = {
+type TagVariant = 'default' | 'primary' | 'success' | 'warning' | 'danger' | 'info' | 'purple';
+
+const MEMBER_LEVEL_LABELS: Record<MemberLevel, { label: string; color: TagVariant }> = {
   normal: { label: '普通会员', color: 'default' },
   silver: { label: '银卡会员', color: 'info' },
   gold: { label: '金卡会员', color: 'warning' },
@@ -66,6 +72,13 @@ export default function PickupVerify() {
     overdueFee: number;
   } | null>(null);
   const [errorMsg, setErrorMsg] = useState('');
+  const [expandedItemId, setExpandedItemId] = useState<string | null>(null);
+  const [photoPreview, setPhotoPreview] = useState<{
+    open: boolean;
+    photos: string[];
+    currentIndex: number;
+    clothingCode: string;
+  }>({ open: false, photos: [], currentIndex: 0, clothingCode: '' });
 
   const getClothingItemByCode = useOrderStore((s) => s.getClothingItemByCode);
   const searchByPhone = useOrderStore((s) => s.searchByPhone);
@@ -193,6 +206,32 @@ export default function PickupVerify() {
   const handleCloseSuccessModal = () => {
     setShowSuccessModal(false);
     setPickedUpSummary(null);
+  };
+
+  const toggleExpandItem = (itemId: string) => {
+    setExpandedItemId((prev) => (prev === itemId ? null : itemId));
+  };
+
+  const openPhotoPreview = (photos: string[], currentIndex: number, clothingCode: string) => {
+    setPhotoPreview({ open: true, photos, currentIndex, clothingCode });
+  };
+
+  const closePhotoPreview = () => {
+    setPhotoPreview({ open: false, photos: [], currentIndex: 0, clothingCode: '' });
+  };
+
+  const prevPhoto = () => {
+    setPhotoPreview((prev) => ({
+      ...prev,
+      currentIndex: prev.currentIndex > 0 ? prev.currentIndex - 1 : prev.photos.length - 1,
+    }));
+  };
+
+  const nextPhoto = () => {
+    setPhotoPreview((prev) => ({
+      ...prev,
+      currentIndex: prev.currentIndex < prev.photos.length - 1 ? prev.currentIndex + 1 : 0,
+    }));
   };
 
   const isItemOverdue = (item: ClothingItem) => {
@@ -328,7 +367,7 @@ export default function PickupVerify() {
                 <div className="flex items-center gap-2 mb-2">
                   <span className="text-lg font-semibold text-gray-800">{foundOrders[0].customerName}</span>
                   {memberInfo && (
-                    <Tag variant={MEMBER_LEVEL_LABELS[memberInfo.level].color as any}>
+                    <Tag variant={MEMBER_LEVEL_LABELS[memberInfo.level].color}>
                       {MEMBER_LEVEL_LABELS[memberInfo.level].label}
                     </Tag>
                   )}
@@ -376,60 +415,202 @@ export default function PickupVerify() {
                   const isSelected = selectedItems.has(item.id);
                   const overdue = isItemOverdue(item);
                   const overdueDays = getOverdueDays(item);
+                  const isExpanded = expandedItemId === item.id;
+                  const hasFlawPhotos = item.flawPhotos.length > 0;
                   return (
                     <div
                       key={item.id}
-                      onClick={() => toggleSelectItem(item.id)}
                       className={cn(
-                        'relative rounded-xl border-2 bg-white p-4 cursor-pointer transition-all duration-200',
+                        'relative rounded-xl border-2 bg-white transition-all duration-200 overflow-hidden',
                         isSelected
                           ? 'border-primary-500 bg-primary-50/30 shadow-md'
                           : 'border-surface-200 hover:border-primary-300 hover:shadow-sm',
                         overdue && !isSelected && 'border-warning-400 bg-warning-50/30'
                       )}
                     >
-                      {isSelected && (
-                        <div className="absolute top-2 right-2 flex h-6 w-6 items-center justify-center rounded-full bg-primary-500 text-white">
-                          <Check className="h-4 w-4" />
-                        </div>
-                      )}
-                      {overdue && (
-                        <div className="absolute top-2 left-2">
-                          <Tag variant="warning" size="sm">
-                            <span className="flex items-center gap-1">
-                              <Clock className="h-3 w-3" />
-                              超期{overdueDays}天
-                            </span>
-                          </Tag>
-                        </div>
-                      )}
-                      <div className={cn('pt-2', overdue && 'pt-8')}>
-                        <div className="flex items-center justify-between mb-3">
-                          <div className="flex items-center gap-2">
-                            <TagIcon className="h-4 w-4 text-gray-500" />
-                            <span className="font-mono text-sm font-semibold text-gray-700">{item.code}</span>
+                      <div
+                        onClick={() => toggleSelectItem(item.id)}
+                        className="p-4 cursor-pointer"
+                      >
+                        {isSelected && (
+                          <div className="absolute top-2 right-2 flex h-6 w-6 items-center justify-center rounded-full bg-primary-500 text-white z-10">
+                            <Check className="h-4 w-4" />
                           </div>
-                          <Tag variant="info">{CATEGORY_LABELS[item.category]}</Tag>
-                        </div>
-                        <div className="space-y-1.5 text-sm">
-                          <div className="flex items-center gap-2 text-gray-600">
-                            <Shirt className="h-3.5 w-3.5 text-gray-400" />
-                            <span>颜色：{item.color}</span>
+                        )}
+                        {overdue && (
+                          <div className="absolute top-2 left-2 z-10">
+                            <Tag variant="warning" size="sm">
+                              <span className="flex items-center gap-1">
+                                <Clock className="h-3 w-3" />
+                                超期{overdueDays}天
+                              </span>
+                            </Tag>
                           </div>
-                          <div className="flex items-center gap-2 text-gray-600">
-                            <Sparkles className="h-3.5 w-3.5 text-gray-400" />
-                            <span>品牌：{item.brand || '无'}</span>
+                        )}
+                        <div className={cn('pt-2', overdue && 'pt-8')}>
+                          <div className="flex items-center justify-between mb-3">
+                            <div className="flex items-center gap-2">
+                              <TagIcon className="h-4 w-4 text-gray-500" />
+                              <span className="font-mono text-sm font-semibold text-gray-700">{item.code}</span>
+                            </div>
+                            <Tag variant="info">{CATEGORY_LABELS[item.category]}</Tag>
                           </div>
-                          <div className="flex items-center gap-2 text-gray-600">
-                            <Clock className="h-3.5 w-3.5 text-gray-400" />
-                            <span>送洗时间：{formatDate(item.receivedAt, 'YYYY-MM-DD')}</span>
+                          <div className="space-y-1.5 text-sm">
+                            <div className="flex items-center gap-2 text-gray-600">
+                              <Shirt className="h-3.5 w-3.5 text-gray-400" />
+                              <span>颜色：{item.color}</span>
+                            </div>
+                            <div className="flex items-center gap-2 text-gray-600">
+                              <Sparkles className="h-3.5 w-3.5 text-gray-400" />
+                              <span>品牌：{item.brand || '无'}</span>
+                            </div>
+                            <div className="flex items-center gap-2 text-gray-600">
+                              <Clock className="h-3.5 w-3.5 text-gray-400" />
+                              <span>送洗时间：{formatDate(item.receivedAt, 'YYYY-MM-DD')}</span>
+                            </div>
                           </div>
-                        </div>
-                        <div className="mt-3 pt-3 border-t border-surface-100 flex items-center justify-between">
-                          <span className="text-xs text-gray-500">{item.orderNo}</span>
-                          <span className="text-lg font-bold text-primary-600">¥{item.totalPrice.toFixed(2)}</span>
+
+                          {hasFlawPhotos && (
+                            <div className="mt-3">
+                              <div className="flex items-center gap-1.5 mb-1.5">
+                                <ImageIcon className="h-3.5 w-3.5 text-warning-500" />
+                                <span className="text-xs font-medium text-warning-600">
+                                  瑕疵照片（{item.flawPhotos.length}张）
+                                </span>
+                              </div>
+                              <div className="flex gap-1.5 flex-wrap">
+                                {item.flawPhotos.slice(0, 4).map((photo, idx) => (
+                                  <div
+                                    key={idx}
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      openPhotoPreview(item.flawPhotos, idx, item.code);
+                                    }}
+                                    className="relative h-12 w-12 rounded-md overflow-hidden border border-surface-200 cursor-pointer hover:border-primary-400 hover:shadow-sm transition-all"
+                                  >
+                                    <img
+                                      src={photo}
+                                      alt={`瑕疵${idx + 1}`}
+                                      className="h-full w-full object-cover"
+                                    />
+                                  </div>
+                                ))}
+                                {item.flawPhotos.length > 4 && (
+                                  <div
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      openPhotoPreview(item.flawPhotos, 0, item.code);
+                                    }}
+                                    className="relative h-12 w-12 rounded-md overflow-hidden border border-surface-200 bg-surface-100 cursor-pointer hover:border-primary-400 hover:shadow-sm transition-all flex items-center justify-center"
+                                  >
+                                    <span className="text-xs font-semibold text-gray-600">
+                                      +{item.flawPhotos.length - 4}
+                                    </span>
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+                          )}
+
+                          {!hasFlawPhotos && (
+                            <div className="mt-3">
+                              <div className="flex items-center gap-1.5">
+                                <ImageIcon className="h-3.5 w-3.5 text-gray-300" />
+                                <span className="text-xs text-gray-400">无瑕疵照片</span>
+                              </div>
+                            </div>
+                          )}
+
+                          <div className="mt-3 pt-3 border-t border-surface-100 flex items-center justify-between">
+                            <span className="text-xs text-gray-500">{item.orderNo}</span>
+                            <span className="text-lg font-bold text-primary-600">¥{item.totalPrice.toFixed(2)}</span>
+                          </div>
                         </div>
                       </div>
+
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          toggleExpandItem(item.id);
+                        }}
+                        className={cn(
+                          'w-full flex items-center justify-center gap-1 py-2 text-xs font-medium border-t transition-colors',
+                          isExpanded
+                            ? 'bg-primary-50 text-primary-600 border-primary-100'
+                            : 'bg-surface-50 text-gray-500 border-surface-100 hover:bg-surface-100'
+                        )}
+                      >
+                        <Eye className="h-3.5 w-3.5" />
+                        <span>瑕疵对照审核</span>
+                        {isExpanded ? (
+                          <ChevronUp className="h-3.5 w-3.5" />
+                        ) : (
+                          <ChevronDown className="h-3.5 w-3.5" />
+                        )}
+                      </button>
+
+                      {isExpanded && (
+                        <div className="border-t border-surface-100 bg-surface-50/50 p-4">
+                          <div className="space-y-3">
+                            <div className="flex items-center gap-2">
+                              <div className="flex h-7 w-7 items-center justify-center rounded-full bg-warning-100">
+                                <ImageIcon className="h-4 w-4 text-warning-600" />
+                              </div>
+                              <div>
+                                <p className="text-sm font-semibold text-gray-800">收件瑕疵记录</p>
+                                <p className="text-xs text-gray-500">
+                                  送洗时间：{formatDate(item.receivedAt, 'YYYY-MM-DD HH:mm')}
+                                </p>
+                              </div>
+                            </div>
+
+                            {item.description && (
+                              <div className="rounded-lg bg-white border border-surface-100 p-3">
+                                <p className="text-xs text-gray-500 mb-1">瑕疵描述</p>
+                                <p className="text-sm text-gray-700">{item.description}</p>
+                              </div>
+                            )}
+
+                            {hasFlawPhotos && (
+                              <div>
+                                <p className="text-xs text-gray-500 mb-2">瑕疵照片（点击放大查看）</p>
+                                <div className="grid grid-cols-4 gap-2">
+                                  {item.flawPhotos.map((photo, idx) => (
+                                    <div
+                                      key={idx}
+                                      onClick={() => openPhotoPreview(item.flawPhotos, idx, item.code)}
+                                      className="relative aspect-square rounded-lg overflow-hidden border border-surface-200 cursor-pointer hover:border-primary-400 hover:shadow-md transition-all group"
+                                    >
+                                      <img
+                                        src={photo}
+                                        alt={`瑕疵照片${idx + 1}`}
+                                        className="h-full w-full object-cover group-hover:scale-105 transition-transform duration-200"
+                                      />
+                                      <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-colors flex items-center justify-center">
+                                        <Eye className="h-5 w-5 text-white opacity-0 group-hover:opacity-100 transition-opacity" />
+                                      </div>
+                                    </div>
+                                  ))}
+                                </div>
+                              </div>
+                            )}
+
+                            {!hasFlawPhotos && !item.description && (
+                              <div className="rounded-lg bg-white border border-surface-100 p-4 text-center">
+                                <ImageIcon className="h-8 w-8 text-gray-300 mx-auto mb-2" />
+                                <p className="text-sm text-gray-400">该衣物未记录瑕疵信息</p>
+                              </div>
+                            )}
+
+                            <div className="rounded-lg bg-primary-50 border border-primary-100 p-3">
+                              <p className="text-xs font-medium text-primary-700 mb-1">取件核对提示</p>
+                              <p className="text-xs text-primary-600">
+                                请对照上方照片确认衣物现状，与客户确认无误后再完成取件核销。
+                              </p>
+                            </div>
+                          </div>
+                        </div>
+                      )}
                     </div>
                   );
                 })}
@@ -544,6 +725,64 @@ export default function PickupVerify() {
             </div>
           )}
         </div>
+      </Modal>
+
+      <Modal
+        open={photoPreview.open}
+        title={`瑕疵照片 - ${photoPreview.clothingCode}`}
+        onClose={closePhotoPreview}
+        width="max-w-3xl"
+        footer={
+          photoPreview.photos.length > 1 ? (
+            <div className="flex items-center justify-between w-full">
+              <span className="text-sm text-gray-500">
+                {photoPreview.currentIndex + 1} / {photoPreview.photos.length}
+              </span>
+              <div className="flex gap-2">
+                <Button variant="secondary" onClick={prevPhoto} leftIcon={<ChevronLeft className="h-4 w-4" />}>
+                  上一张
+                </Button>
+                <Button onClick={nextPhoto} rightIcon={<ChevronRight className="h-4 w-4" />}>
+                  下一张
+                </Button>
+              </div>
+            </div>
+          ) : null
+        }
+      >
+        {photoPreview.photos.length > 0 && (
+          <div className="flex flex-col items-center">
+            <div className="relative w-full rounded-lg overflow-hidden bg-surface-50 border border-surface-200">
+              <img
+                src={photoPreview.photos[photoPreview.currentIndex]}
+                alt={`瑕疵照片${photoPreview.currentIndex + 1}`}
+                className="w-full max-h-[60vh] object-contain"
+              />
+            </div>
+            {photoPreview.photos.length > 1 && (
+              <div className="mt-4 flex gap-2 overflow-x-auto pb-2 w-full">
+                {photoPreview.photos.map((photo, idx) => (
+                  <button
+                    key={idx}
+                    onClick={() => setPhotoPreview((prev) => ({ ...prev, currentIndex: idx }))}
+                    className={cn(
+                      'flex-shrink-0 h-16 w-16 rounded-md overflow-hidden border-2 transition-all',
+                      idx === photoPreview.currentIndex
+                        ? 'border-primary-500 shadow-md'
+                        : 'border-surface-200 hover:border-primary-300'
+                    )}
+                  >
+                    <img
+                      src={photo}
+                      alt={`缩略图${idx + 1}`}
+                      className="h-full w-full object-cover"
+                    />
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
       </Modal>
     </div>
   );
