@@ -1,0 +1,550 @@
+import { useState, useMemo } from 'react';
+import {
+  Scan,
+  Search,
+  Phone,
+  CheckSquare,
+  Package,
+  Check,
+  User,
+  Crown,
+  Clock,
+  Shirt,
+  Tag as TagIcon,
+  AlertTriangle,
+  Sparkles,
+  X,
+} from 'lucide-react';
+import Button from '@/components/Button';
+import Card from '@/components/Card';
+import Tag from '@/components/Tag';
+import Modal from '@/components/Modal';
+import { useOrderStore } from '@/store/orderStore';
+import { useMemberStore } from '@/store/memberStore';
+import type { Order, ClothingItem, MemberLevel, ClothingCategory } from '@/types';
+import { formatDate, checkOverdue, OVERDUE_THRESHOLD_DAYS } from '@/utils/dateUtils';
+import { cn } from '@/lib/utils';
+
+type QueryMethod = 'scan' | 'phone';
+type InputMode = 'scan' | 'manual';
+
+interface ClothingItemWithOrder extends ClothingItem {
+  orderId: string;
+  orderNo: string;
+}
+
+const MEMBER_LEVEL_LABELS: Record<MemberLevel, { label: string; color: string }> = {
+  normal: { label: '普通会员', color: 'default' },
+  silver: { label: '银卡会员', color: 'info' },
+  gold: { label: '金卡会员', color: 'warning' },
+  platinum: { label: '铂金会员', color: 'purple' },
+};
+
+const CATEGORY_LABELS: Record<ClothingCategory, string> = {
+  laundry: '普通洗衣',
+  dry_clean: '干洗',
+  wash: '水洗',
+  iron: '熨烫',
+  leather: '皮具护理',
+  shoes: '鞋子洗护',
+};
+
+const OVERDUE_STORAGE_FEE_PER_DAY = 2;
+
+export default function PickupVerify() {
+  const [queryMethod, setQueryMethod] = useState<QueryMethod>('scan');
+  const [inputMode, setInputMode] = useState<InputMode>('scan');
+  const [scanInput, setScanInput] = useState('');
+  const [phoneInput, setPhoneInput] = useState('');
+  const [selectedItems, setSelectedItems] = useState<Set<string>>(new Set());
+  const [showSuccessModal, setShowSuccessModal] = useState(false);
+  const [pickedUpSummary, setPickedUpSummary] = useState<{
+    customerName: string;
+    customerPhone: string;
+    items: ClothingItemWithOrder[];
+    totalAmount: number;
+    overdueFee: number;
+  } | null>(null);
+  const [errorMsg, setErrorMsg] = useState('');
+
+  const getClothingItemByCode = useOrderStore((s) => s.getClothingItemByCode);
+  const searchByPhone = useOrderStore((s) => s.searchByPhone);
+  const pickUpOrder = useOrderStore((s) => s.pickUpOrder);
+  const getMemberByPhone = useMemberStore((s) => s.getMemberByPhone);
+
+  const [foundOrders, setFoundOrders] = useState<Order[]>([]);
+
+  const memberInfo = useMemo(() => {
+    if (foundOrders.length === 0) return null;
+    const firstOrder = foundOrders[0];
+    return getMemberByPhone(firstOrder.customerPhone);
+  }, [foundOrders, getMemberByPhone]);
+
+  const pendingItems = useMemo<ClothingItemWithOrder[]>(() => {
+    const items: ClothingItemWithOrder[] = [];
+    for (const order of foundOrders) {
+      for (const item of order.clothes) {
+        if (item.status !== 'picked_up') {
+          items.push({
+            ...item,
+            orderId: order.id,
+            orderNo: order.orderNo,
+          });
+        }
+      }
+    }
+    return items;
+  }, [foundOrders]);
+
+  const selectedItemList = useMemo(() => {
+    return pendingItems.filter((item) => selectedItems.has(item.id));
+  }, [pendingItems, selectedItems]);
+
+  const totalAmount = useMemo(() => {
+    return selectedItemList.reduce((sum, item) => sum + item.totalPrice, 0);
+  }, [selectedItemList]);
+
+  const overdueFee = useMemo(() => {
+    let fee = 0;
+    for (const item of selectedItemList) {
+      const check = checkOverdue(item.receivedAt, OVERDUE_THRESHOLD_DAYS);
+      if (check.isOverdue) {
+        fee += check.overdueDays * OVERDUE_STORAGE_FEE_PER_DAY;
+      }
+    }
+    return fee;
+  }, [selectedItemList]);
+
+  const handleScanQuery = () => {
+    if (!scanInput.trim()) return;
+    setErrorMsg('');
+    const result = getClothingItemByCode(scanInput.trim());
+    if (!result) {
+      setErrorMsg('未找到该衣物编码对应的订单');
+      setFoundOrders([]);
+      return;
+    }
+    setFoundOrders([result.order]);
+    setScanInput('');
+    setSelectedItems(new Set());
+  };
+
+  const handlePhoneQuery = () => {
+    if (!phoneInput.trim()) return;
+    setErrorMsg('');
+    const orders = searchByPhone(phoneInput.trim());
+    if (orders.length === 0) {
+      setErrorMsg('未找到该手机号对应的订单');
+      setFoundOrders([]);
+      return;
+    }
+    setFoundOrders(orders);
+    setSelectedItems(new Set());
+  };
+
+  const toggleSelectItem = (itemId: string) => {
+    setSelectedItems((prev) => {
+      const next = new Set(prev);
+      if (next.has(itemId)) {
+        next.delete(itemId);
+      } else {
+        next.add(itemId);
+      }
+      return next;
+    });
+  };
+
+  const handleSelectAll = () => {
+    if (selectedItems.size === pendingItems.length && pendingItems.length > 0) {
+      setSelectedItems(new Set());
+    } else {
+      setSelectedItems(new Set(pendingItems.map((item) => item.id)));
+    }
+  };
+
+  const handleConfirmPickup = () => {
+    if (selectedItemList.length === 0) return;
+
+    const ordersMap = new Map<string, string[]>();
+    for (const item of selectedItemList) {
+      if (!ordersMap.has(item.orderId)) {
+        ordersMap.set(item.orderId, []);
+      }
+      ordersMap.get(item.orderId)!.push(item.code);
+    }
+
+    for (const [orderId, codes] of ordersMap) {
+      pickUpOrder({ orderId, clothingCodes: codes });
+    }
+
+    const firstOrder = foundOrders[0];
+    setPickedUpSummary({
+      customerName: firstOrder.customerName,
+      customerPhone: firstOrder.customerPhone,
+      items: selectedItemList,
+      totalAmount,
+      overdueFee,
+    });
+    setShowSuccessModal(true);
+    setFoundOrders([]);
+    setSelectedItems(new Set());
+  };
+
+  const handleCloseSuccessModal = () => {
+    setShowSuccessModal(false);
+    setPickedUpSummary(null);
+  };
+
+  const isItemOverdue = (item: ClothingItem) => {
+    return checkOverdue(item.receivedAt, OVERDUE_THRESHOLD_DAYS).isOverdue;
+  };
+
+  const getOverdueDays = (item: ClothingItem) => {
+    return checkOverdue(item.receivedAt, OVERDUE_THRESHOLD_DAYS).overdueDays;
+  };
+
+  return (
+    <div className="max-w-6xl mx-auto">
+      <div className="mb-6">
+        <h1 className="text-2xl font-bold text-gray-800">取件核销</h1>
+        <p className="text-sm text-gray-500 mt-1">通过扫码或手机号查询待取件衣物，确认后完成核销</p>
+      </div>
+
+      <Card className="mb-6">
+        <div className="flex items-center gap-4 mb-6">
+          <button
+            onClick={() => setQueryMethod('scan')}
+            className={cn(
+              'flex items-center gap-2 h-10 px-4 rounded-lg font-medium transition-all',
+              queryMethod === 'scan'
+                ? 'bg-primary-500 text-white shadow-sm'
+                : 'bg-surface-100 text-gray-600 hover:bg-surface-200'
+            )}
+          >
+            <Scan className="h-4 w-4" />
+            扫码查询
+          </button>
+          <button
+            onClick={() => setQueryMethod('phone')}
+            className={cn(
+              'flex items-center gap-2 h-10 px-4 rounded-lg font-medium transition-all',
+              queryMethod === 'phone'
+                ? 'bg-primary-500 text-white shadow-sm'
+                : 'bg-surface-100 text-gray-600 hover:bg-surface-200'
+            )}
+          >
+            <Phone className="h-4 w-4" />
+            手机号查询
+          </button>
+        </div>
+
+        {queryMethod === 'scan' && (
+          <div className="space-y-4">
+            {inputMode === 'scan' ? (
+              <div className="relative mx-auto w-full max-w-md">
+                <div className="relative aspect-square max-w-sm mx-auto rounded-xl border-2 border-primary-400 bg-primary-50/30 overflow-hidden">
+                  <div className="absolute inset-0 flex items-center justify-center">
+                    <div className="text-center">
+                      <Scan className="h-16 w-16 text-primary-400 mx-auto mb-3" />
+                      <p className="text-primary-600 font-medium mb-1">请扫描衣物编码</p>
+                      <p className="text-xs text-gray-500">将条码/二维码对准扫描框</p>
+                    </div>
+                  </div>
+                  <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-transparent via-primary-500 to-transparent animate-scan-line" />
+                  <div className="absolute top-0 left-0 w-6 h-6 border-t-4 border-l-4 border-primary-500 rounded-tl-lg" />
+                  <div className="absolute top-0 right-0 w-6 h-6 border-t-4 border-r-4 border-primary-500 rounded-tr-lg" />
+                  <div className="absolute bottom-0 left-0 w-6 h-6 border-b-4 border-l-4 border-primary-500 rounded-bl-lg" />
+                  <div className="absolute bottom-0 right-0 w-6 h-6 border-b-4 border-r-4 border-primary-500 rounded-br-lg" />
+                </div>
+                <button
+                  onClick={() => setInputMode('manual')}
+                  className="mt-4 w-full text-center text-sm text-primary-600 hover:text-primary-700 font-medium"
+                >
+                  无法扫描？手动输入衣物编码
+                </button>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                <div className="flex gap-3">
+                  <div className="flex-1">
+                    <input
+                      type="text"
+                      placeholder="请输入衣物编码"
+                      value={scanInput}
+                      onChange={(e) => setScanInput(e.target.value)}
+                      onKeyDown={(e) => e.key === 'Enter' && handleScanQuery()}
+                      className="w-full h-10 px-3 rounded-lg border border-surface-200 focus:outline-none focus:ring-2 focus:ring-primary-400 focus:border-transparent"
+                    />
+                  </div>
+                  <Button onClick={handleScanQuery} leftIcon={<Search className="h-4 w-4" />}>
+                    查询
+                  </Button>
+                </div>
+                <button
+                  onClick={() => setInputMode('scan')}
+                  className="text-sm text-primary-600 hover:text-primary-700 font-medium"
+                >
+                  返回扫码模式
+                </button>
+              </div>
+            )}
+          </div>
+        )}
+
+        {queryMethod === 'phone' && (
+          <div className="flex gap-3">
+            <div className="flex-1">
+              <input
+                type="text"
+                placeholder="请输入客户手机号"
+                value={phoneInput}
+                onChange={(e) => setPhoneInput(e.target.value)}
+                onKeyDown={(e) => e.key === 'Enter' && handlePhoneQuery()}
+                className="w-full h-10 px-3 rounded-lg border border-surface-200 focus:outline-none focus:ring-2 focus:ring-primary-400 focus:border-transparent"
+              />
+            </div>
+            <Button onClick={handlePhoneQuery} leftIcon={<Search className="h-4 w-4" />}>
+              查询
+            </Button>
+          </div>
+        )}
+
+        {errorMsg && (
+          <div className="mt-4 flex items-center gap-2 text-red-500 text-sm bg-red-50 p-3 rounded-lg">
+            <AlertTriangle className="h-4 w-4" />
+            {errorMsg}
+          </div>
+        )}
+      </Card>
+
+      {foundOrders.length > 0 && (
+        <>
+          <Card className="mb-6 border-primary-200 bg-primary-50/30">
+            <div className="flex items-start gap-4">
+              <div className="flex h-14 w-14 items-center justify-center rounded-full bg-primary-100">
+                <User className="h-7 w-7 text-primary-500" />
+              </div>
+              <div className="flex-1">
+                <div className="flex items-center gap-2 mb-2">
+                  <span className="text-lg font-semibold text-gray-800">{foundOrders[0].customerName}</span>
+                  {memberInfo && (
+                    <Tag variant={MEMBER_LEVEL_LABELS[memberInfo.level].color as any}>
+                      {MEMBER_LEVEL_LABELS[memberInfo.level].label}
+                    </Tag>
+                  )}
+                </div>
+                <p className="text-sm text-gray-500 mb-3">手机号：{foundOrders[0].customerPhone}</p>
+                {memberInfo && (
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="bg-white rounded-lg p-3 border border-surface-100">
+                      <p className="text-xs text-gray-500 mb-1">账户余额</p>
+                      <p className="text-lg font-bold text-primary-600">¥{memberInfo.balance.toFixed(2)}</p>
+                    </div>
+                    <div className="bg-white rounded-lg p-3 border border-surface-100">
+                      <p className="text-xs text-gray-500 mb-1">会员积分</p>
+                      <p className="text-lg font-bold text-warning-600">{memberInfo.points}</p>
+                    </div>
+                  </div>
+                )}
+              </div>
+              {!memberInfo && (
+                <Tag variant="default">散客</Tag>
+              )}
+            </div>
+          </Card>
+
+          {pendingItems.length > 0 ? (
+            <>
+              <div className="flex items-center justify-between mb-4">
+                <div className="flex items-center gap-2">
+                  <Package className="h-5 w-5 text-primary-500" />
+                  <h3 className="text-lg font-semibold">待取件衣物</h3>
+                  <span className="text-sm text-gray-500">（共 {pendingItems.length} 件）</span>
+                </div>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={handleSelectAll}
+                  leftIcon={<CheckSquare className="h-4 w-4" />}
+                >
+                  {selectedItems.size === pendingItems.length && pendingItems.length > 0 ? '取消全选' : '全选'}
+                </Button>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mb-6">
+                {pendingItems.map((item) => {
+                  const isSelected = selectedItems.has(item.id);
+                  const overdue = isItemOverdue(item);
+                  const overdueDays = getOverdueDays(item);
+                  return (
+                    <div
+                      key={item.id}
+                      onClick={() => toggleSelectItem(item.id)}
+                      className={cn(
+                        'relative rounded-xl border-2 bg-white p-4 cursor-pointer transition-all duration-200',
+                        isSelected
+                          ? 'border-primary-500 bg-primary-50/30 shadow-md'
+                          : 'border-surface-200 hover:border-primary-300 hover:shadow-sm',
+                        overdue && !isSelected && 'border-warning-400 bg-warning-50/30'
+                      )}
+                    >
+                      {isSelected && (
+                        <div className="absolute top-2 right-2 flex h-6 w-6 items-center justify-center rounded-full bg-primary-500 text-white">
+                          <Check className="h-4 w-4" />
+                        </div>
+                      )}
+                      {overdue && (
+                        <div className="absolute top-2 left-2">
+                          <Tag variant="warning" size="sm">
+                            <span className="flex items-center gap-1">
+                              <Clock className="h-3 w-3" />
+                              超期{overdueDays}天
+                            </span>
+                          </Tag>
+                        </div>
+                      )}
+                      <div className={cn('pt-2', overdue && 'pt-8')}>
+                        <div className="flex items-center justify-between mb-3">
+                          <div className="flex items-center gap-2">
+                            <TagIcon className="h-4 w-4 text-gray-500" />
+                            <span className="font-mono text-sm font-semibold text-gray-700">{item.code}</span>
+                          </div>
+                          <Tag variant="info">{CATEGORY_LABELS[item.category]}</Tag>
+                        </div>
+                        <div className="space-y-1.5 text-sm">
+                          <div className="flex items-center gap-2 text-gray-600">
+                            <Shirt className="h-3.5 w-3.5 text-gray-400" />
+                            <span>颜色：{item.color}</span>
+                          </div>
+                          <div className="flex items-center gap-2 text-gray-600">
+                            <Sparkles className="h-3.5 w-3.5 text-gray-400" />
+                            <span>品牌：{item.brand || '无'}</span>
+                          </div>
+                          <div className="flex items-center gap-2 text-gray-600">
+                            <Clock className="h-3.5 w-3.5 text-gray-400" />
+                            <span>送洗时间：{formatDate(item.receivedAt, 'YYYY-MM-DD')}</span>
+                          </div>
+                        </div>
+                        <div className="mt-3 pt-3 border-t border-surface-100 flex items-center justify-between">
+                          <span className="text-xs text-gray-500">{item.orderNo}</span>
+                          <span className="text-lg font-bold text-primary-600">¥{item.totalPrice.toFixed(2)}</span>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+
+              <Card className="sticky bottom-4 shadow-lg border-primary-200">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-6">
+                    <div>
+                      <span className="text-sm text-gray-500">已选件数：</span>
+                      <span className="text-xl font-bold text-primary-600 ml-1">{selectedItems.size}</span>
+                      <span className="text-sm text-gray-500 ml-1">件</span>
+                    </div>
+                    <div className="h-6 w-px bg-surface-200" />
+                    <div>
+                      <span className="text-sm text-gray-500">衣物总价：</span>
+                      <span className="text-xl font-bold text-gray-700 ml-1">¥{totalAmount.toFixed(2)}</span>
+                    </div>
+                    {overdueFee > 0 && (
+                      <>
+                        <div className="h-6 w-px bg-surface-200" />
+                        <div>
+                          <span className="text-sm text-gray-500">超时保管费：</span>
+                          <span className="text-xl font-bold text-warning-600 ml-1">¥{overdueFee.toFixed(2)}</span>
+                        </div>
+                      </>
+                    )}
+                    <div className="h-6 w-px bg-surface-200" />
+                    <div>
+                      <span className="text-sm text-gray-500">应付总计：</span>
+                      <span className="text-2xl font-bold text-primary-600 ml-1">
+                        ¥{(totalAmount + overdueFee).toFixed(2)}
+                      </span>
+                    </div>
+                  </div>
+                  <Button
+                    size="lg"
+                    onClick={handleConfirmPickup}
+                    disabled={selectedItems.size === 0}
+                    leftIcon={<CheckSquare className="h-5 w-5" />}
+                  >
+                    确认取件核销
+                  </Button>
+                </div>
+              </Card>
+            </>
+          ) : (
+            <Card>
+              <div className="text-center py-12">
+                <Package className="h-12 w-12 text-gray-300 mx-auto mb-3" />
+                <p className="text-gray-500">该客户暂无待取件衣物</p>
+              </div>
+            </Card>
+          )}
+        </>
+      )}
+
+      <Modal
+        open={showSuccessModal}
+        title="取件核销成功"
+        onClose={handleCloseSuccessModal}
+        showClose={false}
+        footer={
+          <Button onClick={handleCloseSuccessModal}>
+            完成
+          </Button>
+        }
+      >
+        <div className="text-center py-4">
+          <div className="flex h-16 w-16 items-center justify-center rounded-full bg-green-100 mx-auto mb-4">
+            <Check className="h-8 w-8 text-green-600" />
+          </div>
+          <p className="text-lg font-semibold text-gray-800 mb-4">取件核销成功</p>
+
+          {pickedUpSummary && (
+            <div className="text-left bg-surface-50 rounded-lg p-4 space-y-3">
+              <div className="flex justify-between text-sm">
+                <span className="text-gray-500">客户姓名</span>
+                <span className="font-medium text-gray-700">{pickedUpSummary.customerName}</span>
+              </div>
+              <div className="flex justify-between text-sm">
+                <span className="text-gray-500">联系电话</span>
+                <span className="font-medium text-gray-700">{pickedUpSummary.customerPhone}</span>
+              </div>
+              <div className="border-t border-surface-200 pt-3">
+                <p className="text-sm text-gray-500 mb-2">取件衣物（{pickedUpSummary.items.length}件）</p>
+                <div className="space-y-1.5 max-h-40 overflow-y-auto">
+                  {pickedUpSummary.items.map((item) => (
+                    <div key={item.id} className="flex justify-between text-sm">
+                      <span className="font-mono text-gray-600">{item.code}</span>
+                      <span className="font-medium text-primary-600">¥{item.totalPrice.toFixed(2)}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+              {pickedUpSummary.overdueFee > 0 && (
+                <div className="flex justify-between text-sm">
+                  <span className="text-gray-500">超时保管费</span>
+                  <span className="font-medium text-warning-600">¥{pickedUpSummary.overdueFee.toFixed(2)}</span>
+                </div>
+              )}
+              <div className="border-t border-surface-200 pt-3 flex justify-between items-baseline">
+                <span className="text-gray-600 font-medium">应付总计</span>
+                <span className="text-2xl font-bold text-primary-600">
+                  ¥{(pickedUpSummary.totalAmount + pickedUpSummary.overdueFee).toFixed(2)}
+                </span>
+              </div>
+              <div className="flex justify-between text-sm">
+                <span className="text-gray-500">取件时间</span>
+                <span className="font-medium text-gray-700">{formatDate(new Date(), 'YYYY年MM月DD日 HH:mm')}</span>
+              </div>
+            </div>
+          )}
+        </div>
+      </Modal>
+    </div>
+  );
+}
