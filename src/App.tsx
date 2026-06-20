@@ -10,6 +10,9 @@ import MemberDetail from "@/pages/MemberDetail";
 import MemberRecharge from "@/pages/MemberRecharge";
 import PricingConfig from "@/pages/PricingConfig";
 import Statistics from "@/pages/Statistics";
+import PickupPointManagement from "@/pages/PickupPointManagement";
+import BatchManagement from "@/pages/BatchManagement";
+import BatchDetail from "@/pages/BatchDetail";
 
 export default function App() {
   return (
@@ -25,6 +28,9 @@ export default function App() {
           <Route path="/members" element={<MemberList />} />
           <Route path="/members/recharge" element={<MemberRecharge />} />
           <Route path="/members/:id" element={<MemberDetail />} />
+          <Route path="/pickup-points" element={<PickupPointManagement />} />
+          <Route path="/batches" element={<BatchManagement />} />
+          <Route path="/batches/:id" element={<BatchDetail />} />
           <Route path="/pricing" element={<PricingConfig />} />
           <Route path="/statistics" element={<Statistics />} />
         </Route>

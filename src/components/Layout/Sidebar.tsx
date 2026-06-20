@@ -11,6 +11,8 @@ import {
   ChevronLeft,
   ChevronRight,
   Shirt,
+  MapPin,
+  Package,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
@@ -20,6 +22,8 @@ const menuItems = [
   { path: '/orders', label: '订单管理', icon: ClipboardList },
   { path: '/pickup', label: '取件核销', icon: QrCode },
   { path: '/members', label: '会员管理', icon: Users },
+  { path: '/pickup-points', label: '收件点管理', icon: MapPin },
+  { path: '/batches', label: '批次单管理', icon: Package },
   { path: '/pricing', label: '定价配置', icon: Tag },
   { path: '/statistics', label: '数据统计', icon: BarChart3 },
 ];

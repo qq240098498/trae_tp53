@@ -47,6 +47,10 @@ export interface Order {
   createdAt: string;
   updatedAt: string;
   remark?: string;
+  pickupPointId?: string;
+  pickupPointName?: string;
+  batchId?: string;
+  batchNo?: string;
 }
 
 export interface RechargeRecord {
@@ -84,4 +88,44 @@ export interface ExtraFee {
   name: string;
   price: number;
   applicableCategories: ClothingCategory[];
+}
+
+export type PickupPointType = 'community_gate' | 'convenience_store' | 'other';
+
+export type CollectionWeekday = 0 | 1 | 2 | 3 | 4 | 5 | 6;
+
+export interface PickupPoint {
+  id: string;
+  pointNo: string;
+  name: string;
+  type: PickupPointType;
+  address: string;
+  contactName: string;
+  contactPhone: string;
+  collectionWeekdays: CollectionWeekday[];
+  collectionTime: string;
+  isActive: boolean;
+  createdAt: string;
+  remark?: string;
+}
+
+export type BatchStatus = 'pending' | 'collecting' | 'collected' | 'washing' | 'returning' | 'returned' | 'cancelled';
+
+export interface CollectionBatch {
+  id: string;
+  batchNo: string;
+  pickupPointId: string;
+  pickupPointName: string;
+  scheduledDate: string;
+  scheduledTime: string;
+  status: BatchStatus;
+  orderIds: string[];
+  totalOrders: number;
+  totalClothes: number;
+  totalAmount: number;
+  collectedAt?: string;
+  returnedAt?: string;
+  createdAt: string;
+  updatedAt: string;
+  remark?: string;
 }

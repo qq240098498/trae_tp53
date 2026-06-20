@@ -32,6 +32,18 @@ interface PickUpOrderInput {
   clothingCodes?: string[];
 }
 
+interface AssignOrderToBatchInput {
+  orderId: string;
+  batchId: string;
+  batchNo: string;
+  pickupPointId: string;
+  pickupPointName: string;
+}
+
+interface UnassignOrderFromBatchInput {
+  orderId: string;
+}
+
 interface OrderStoreState {
   orders: Order[];
   getOrderById: (id: string) => Order | undefined;
@@ -40,6 +52,9 @@ interface OrderStoreState {
   searchByClothingCode: (code: string) => Order | undefined;
   searchByPhone: (phone: string) => Order[];
   getOrdersByStatus: (status: OrderStatus) => Order[];
+  getOrdersByPickupPoint: (pickupPointId: string) => Order[];
+  getOrdersByBatch: (batchId: string) => Order[];
+  getUnassignedOrders: () => Order[];
   addOrder: (input: CreateOrderInput) => Order;
   updateOrderStatus: (input: UpdateOrderStatusInput) => boolean;
   updateClothingItemStatus: (orderId: string, clothingId: string, status: OrderStatus) => boolean;
@@ -48,6 +63,8 @@ interface OrderStoreState {
   checkOverdueOrders: () => { updated: number; overdueOrders: Order[] };
   getOverdueOrders: () => Order[];
   getClothingItemByCode: (code: string) => { order: Order; item: ClothingItem } | undefined;
+  assignOrderToBatch: (input: AssignOrderToBatchInput) => boolean;
+  unassignOrderFromBatch: (input: UnassignOrderFromBatchInput) => boolean;
 }
 
 function getInitialState(): Pick<OrderStoreState, 'orders'> {
@@ -376,6 +393,72 @@ export const useOrderStore = create<OrderStoreState>((set, get) => {
         }
       }
       return undefined;
+    },
+
+    getOrdersByPickupPoint: (pickupPointId) => {
+      return get().orders.filter((o) => o.pickupPointId === pickupPointId);
+    },
+
+    getOrdersByBatch: (batchId) => {
+      return get().orders.filter((o) => o.batchId === batchId);
+    },
+
+    getUnassignedOrders: () => {
+      return get().orders.filter((o) => !o.batchId);
+    },
+
+    assignOrderToBatch: (input) => {
+      const order = get().getOrderById(input.orderId);
+      if (!order) return false;
+
+      const now = new Date().toISOString();
+
+      set((state) => {
+        const newOrders = state.orders.map((o) =>
+          o.id === input.orderId
+            ? {
+                ...o,
+                batchId: input.batchId,
+                batchNo: input.batchNo,
+                pickupPointId: input.pickupPointId,
+                pickupPointName: input.pickupPointName,
+                updatedAt: now,
+              }
+            : o
+        );
+        const newState = { ...state, orders: newOrders };
+        persist(newState);
+        return newState;
+      });
+
+      return true;
+    },
+
+    unassignOrderFromBatch: (input) => {
+      const order = get().getOrderById(input.orderId);
+      if (!order) return false;
+
+      const now = new Date().toISOString();
+
+      set((state) => {
+        const newOrders = state.orders.map((o) =>
+          o.id === input.orderId
+            ? {
+                ...o,
+                batchId: undefined,
+                batchNo: undefined,
+                pickupPointId: undefined,
+                pickupPointName: undefined,
+                updatedAt: now,
+              }
+            : o
+        );
+        const newState = { ...state, orders: newOrders };
+        persist(newState);
+        return newState;
+      });
+
+      return true;
     },
   };
 });
